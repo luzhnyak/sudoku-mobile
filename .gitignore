@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+.npm-cache/
+.gradle/
+android/
+ios/
+dist/
+coverage/
+*.tsbuildinfo
+*.apk
+*.aab
+*.jks
+*.keystore
+expo-env.d.ts
