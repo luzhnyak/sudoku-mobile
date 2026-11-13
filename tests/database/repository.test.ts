@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test, type TestContext } from 'node:test';
 import { createRepository, type SqliteConnection } from '../../src/database/repository';
-import type { Game, Move, Settings } from '../../src/game/model';
+import { defaultSettings, type Game, type Move, type Settings } from '../../src/game/model';
 
 function connect(db: DatabaseSync): SqliteConnection {
   return {
@@ -232,6 +232,101 @@ test('round-trips every preference and keeps it after reopening the repository',
 test('enables SQLite foreign keys for the move history', async (t) => {
   const { db } = await open(t);
   assert.throws(() => db.prepare('INSERT INTO game_moves (game_id, move_index, move_data) VALUES (?, ?, ?)').run('missing', 0, '{}'), /FOREIGN KEY constraint failed/);
+});
+
+test('resets all statistics durably while preserving preferences, games and daily results', async (t) => {
+  const { db, repository } = await open(t);
+  const active = game('active', {
+    board: [1, 0, ...solution.slice(2)], history: [move1, move2], cursor: 1,
+    elapsedMs: 4500, mistakes: 2, hintsUsed: 1,
+  });
+  const daily = game('daily-won', {
+    type: 'daily', dailyDate: '2026-11-11', status: 'won', elapsedMs: 9000,
+  });
+  const settings = { ...defaultSettings, theme: 'dark' as const };
+  await repository.saveSettings(settings);
+  await repository.saveGame(active);
+  await repository.saveGame(daily);
+  await repository.saveGame(game('expert-lost', { difficulty: 'expert', status: 'lost', mistakes: 3 }));
+
+  await repository.resetStatistics();
+  const reopened = await createRepository(connect(db));
+  const stats = await reopened.getStatistics('2026-11-11');
+  const empty = { started: 0, completed: 0, won: 0, bestMs: null, averageMs: null, mistakes: 0, hintsUsed: 0 };
+  assert.deepEqual(stats.total, empty);
+  for (const difficulty of Object.values(stats.byDifficulty)) assert.deepEqual(difficulty, empty);
+  assert.equal(stats.currentStreak, 0);
+  assert.equal(stats.longestStreak, 0);
+  assert.deepEqual(stats.dailyResults, []);
+  assert.deepEqual(await reopened.getLatestActive(), active);
+  assert.deepEqual(await reopened.getDaily('2026-11-11'), daily);
+  assert.deepEqual(await reopened.getSettings(), settings);
+
+  // Reopening or retrying a completed daily must keep its original result excluded.
+  await reopened.saveGame(daily);
+  await assert.rejects(reopened.saveGame({ ...daily, id: 'daily-duplicate' }));
+  assert.equal((await reopened.getStatistics('2026-11-11')).total.started, 0);
+});
+
+test('counts new games and subsequent completions once after reset, without restoring old autosaves', async (t) => {
+  const { repository } = await open(t);
+  const active = game('active-daily', { type: 'daily', dailyDate: '2026-11-12' });
+  const next = game('new', { difficulty: 'medium' });
+  await Promise.all([
+    repository.saveGame(active),
+    repository.resetStatistics(),
+    repository.saveGame(next),
+  ]);
+  await repository.saveGame({ ...active, elapsedMs: 5000, history: [move1], cursor: 1 });
+  let stats = await repository.getStatistics('2026-11-12');
+  assert.equal(stats.total.started, 1);
+  assert.equal(stats.byDifficulty.easy.started, 0);
+
+  const won = { ...active, status: 'won' as const, board: solution, completedAt: 9000, elapsedMs: 8000 };
+  await repository.saveGame(won);
+  await repository.saveGame(won);
+  await repository.saveGame(active);
+  stats = await repository.getStatistics('2026-11-12');
+  assert.equal(stats.total.started, 2);
+  assert.equal(stats.total.completed, 1);
+  assert.equal(stats.total.won, 1);
+  assert.equal(stats.currentStreak, 1);
+  assert.equal(stats.dailyResults.length, 1);
+
+  await repository.resetStatistics();
+  await repository.saveGame(won);
+  assert.equal((await repository.getStatistics('2026-11-12')).total.started, 0);
+});
+
+test('rolls back a failed statistics reset and allows a retry', async (t) => {
+  const { db, repository } = await open(t);
+  await repository.saveGame(game('first', { status: 'won' }));
+  await repository.saveGame(game('second', { status: 'won' }));
+  db.exec(`
+    CREATE TRIGGER reject_reset BEFORE UPDATE OF statistics_included ON games
+    WHEN NEW.id = 'second' AND NEW.statistics_included = 0
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated reset failure');
+    END;
+  `);
+  await assert.rejects(repository.resetStatistics(), /simulated reset failure/);
+  assert.equal((await repository.getStatistics('2026-11-12')).total.won, 2);
+  db.exec('DROP TRIGGER reject_reset');
+  await repository.resetStatistics();
+  assert.equal((await repository.getStatistics('2026-11-12')).total.won, 0);
+});
+
+test('upgrades a version one database with existing statistics and history', async (t) => {
+  const { db, repository } = await open(t);
+  const saved = game('existing', { history: [move1, move2], cursor: 1 });
+  await repository.saveGame(saved);
+  db.exec('ALTER TABLE games DROP COLUMN statistics_included; PRAGMA user_version = 1;');
+  const upgraded = await createRepository(connect(db));
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 2);
+  assert.deepEqual(await upgraded.getGame(saved.id), saved);
+  assert.equal((await upgraded.getStatistics('2026-11-12')).total.started, 1);
+  await upgraded.resetStatistics();
+  assert.equal((await upgraded.getStatistics('2026-11-12')).total.started, 0);
 });
 
 test('refuses to open a newer schema without modifying it', async (t) => {

@@ -13,6 +13,7 @@ export interface Repository {
   saveSettings(settings: Settings): Promise<void>;
   getSettings(): Promise<Settings>;
   getStatistics(today: string): Promise<Statistics>;
+  resetStatistics(): Promise<void>;
 }
 
 interface GameRow {
@@ -90,7 +91,8 @@ async function writeGame(db: SqliteConnection, game: Game): Promise<void> {
       hints_used = excluded.hints_used,
       updated_at = excluded.updated_at,
       completed_at = excluded.completed_at,
-      history_cursor = excluded.history_cursor
+      history_cursor = excluded.history_cursor,
+      statistics_included = CASE WHEN excluded.status = 'playing' THEN games.statistics_included ELSE 1 END
     WHERE games.status = 'playing'`,
     game.id,
     JSON.stringify(game.puzzle),
@@ -203,5 +205,9 @@ export async function createRepository(db: SqliteConnection): Promise<Repository
     saveSettings: (settings) => enqueue(() => writeSettings(db, settings)),
     getSettings: () => enqueue(() => readSettings(db)),
     getStatistics: (today) => enqueue(() => transaction(db, 'read', () => loadStatistics(db, today))),
+    resetStatistics: () => enqueue(() => transaction(db, 'write', async () => {
+      // Retain attempts and daily puzzles so a reset cannot reopen a completed daily.
+      await db.runAsync('UPDATE games SET statistics_included = 0');
+    })),
   };
 }

@@ -2,9 +2,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Page, SectionTitle, Sheet, Status } from '../src/components/ui/controls';
-import { DifficultyMark, difficultyLevels } from '../src/components/ui/DifficultyMark';
-import type { Difficulty } from '../src/engine';
+import { NewGameSheet } from '../src/components/game/NewGameSheet';
+import { Button, Page } from '../src/components/ui/controls';
 import { uk } from '../src/localization/uk';
 import { useSessionStore } from '../src/store/sessionStore';
 import { useTheme } from '../src/theme/theme';
@@ -39,11 +38,8 @@ function BrandCard() {
 export default function HomeScreen() {
   const theme = useTheme();
   const latest = useSessionStore((state) => state.latestActive);
-  const busy = useSessionStore((state) => state.busy);
-  const startClassic = useSessionStore((state) => state.startClassic);
   const continueGame = useSessionStore((state) => state.continueGame);
   const [chooserOpen, setChooserOpen] = useState(false);
-  const [error, setError] = useState(false);
   const { newGame } = useLocalSearchParams<{ newGame?: string }>();
 
   useEffect(() => {
@@ -53,25 +49,8 @@ export default function HomeScreen() {
     }
   }, [newGame]);
 
-  async function start(difficulty: Difficulty) {
-    setError(false);
-    try {
-      if (!await startClassic(difficulty)) return;
-      setChooserOpen(false);
-      router.navigate('/game');
-    } catch {
-      setError(true);
-    }
-  }
-
-  function closeChooser() {
-    if (busy) return;
-    setError(false);
-    setChooserOpen(false);
-  }
-
   return (
-    <Page>
+    <Page fullWidth={false} contentStyle={styles.page}>
       <BrandCard />
       <View style={styles.actions}>
         <Button label={uk.home.newGame} onPress={() => setChooserOpen(true)} glyph="+" />
@@ -130,35 +109,16 @@ export default function HomeScreen() {
           <Text style={[styles.navLabel, { color: theme.text }]}>{uk.home.settings}</Text>
         </Pressable>
       </View>
+      <Button label={uk.help.title} variant="quiet" onPress={() => router.push('/help')} />
       {chooserOpen && (
-        <Sheet title={uk.home.chooseLevel} onClose={closeChooser}>
-          {busy ? <Status loading message={uk.common.generating} /> : (
-            <>
-              {error && <Status message={uk.common.startError} />}
-              {difficultyLevels.map((difficulty) => (
-                <Pressable
-                  key={difficulty}
-                  accessibilityRole="button"
-                  onPress={() => void start(difficulty)}
-                  style={({ pressed }) => [
-                    styles.level,
-                    { backgroundColor: pressed ? theme.primaryTint : theme.surfaceMuted },
-                  ]}
-                >
-                  <DifficultyMark difficulty={difficulty} />
-                  <SectionTitle>{uk.difficulty[difficulty]}</SectionTitle>
-                  <Text style={[styles.levelChevron, { color: theme.primary }]}>›</Text>
-                </Pressable>
-              ))}
-            </>
-          )}
-        </Sheet>
+        <NewGameSheet onClose={() => setChooserOpen(false)} onStarted={() => router.navigate('/game')} />
       )}
     </Page>
   );
 }
 
 const styles = StyleSheet.create({
+  page: { flexGrow: 1, justifyContent: 'center', paddingBottom: 16 },
   hero: {
     minHeight: 186, borderRadius: 26, padding: 20, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between', gap: 12,
@@ -183,6 +143,4 @@ const styles = StyleSheet.create({
   chevron: { fontSize: 26, lineHeight: 29 },
   shortcuts: { flexDirection: 'row', gap: 10 },
   shortcut: { flex: 1, minHeight: 82, borderWidth: 1, borderRadius: 18, padding: 13, gap: 5 },
-  level: { minHeight: 52, flexDirection: 'row', gap: 12, alignItems: 'center', padding: 12, borderRadius: 13 },
-  levelChevron: { marginLeft: 'auto', fontSize: 24 },
 });

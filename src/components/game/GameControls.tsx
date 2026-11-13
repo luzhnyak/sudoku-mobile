@@ -1,13 +1,15 @@
 import { memo, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DIGITS } from '../../engine';
 import type { Board, Difficulty, Digit } from '../../engine';
+import { remainingDigits } from '../../game/rules';
 import { elapsedTime } from '../../gameClock/activeTime';
 import { uk } from '../../localization/uk';
 import { useSessionStore } from '../../store/sessionStore';
-import { layout, useTheme } from '../../theme/theme';
+import { useTheme } from '../../theme/theme';
 import { formatTime } from '../../utils/format';
+import { BackIcon } from '../ui/BackIcon';
 import { DifficultyMark } from '../ui/DifficultyMark';
 
 function ActiveClock() {
@@ -47,7 +49,7 @@ export function GameHeader({ difficulty, daily, mistakes, showMistakes, limit, o
         onPress={onBack}
         style={({ pressed }) => [styles.iconButton, { backgroundColor: pressed ? theme.primaryTint : theme.surface, borderColor: theme.border }]}
       >
-        <Text style={[styles.backIcon, { color: theme.text }]}>‹</Text>
+        <BackIcon />
       </Pressable>
       <View style={styles.headerCopy}>
         {daily && <Text style={[styles.headerCaption, { color: theme.muted }]}>{uk.home.daily}</Text>}
@@ -111,40 +113,38 @@ export const NumberPad = memo(function NumberPad({ board, solution, onDigit, dis
   disabled: boolean;
 }) {
   const theme = useTheme();
-  const { width, fontScale } = useWindowDimensions();
-  const space = Math.min(width, layout.maxWidth) - layout.inset * 2;
-  const rows = space < 352 || fontScale > 1.35 ? [DIGITS.slice(0, 5), DIGITS.slice(5)] : [DIGITS];
-  const counts = new Array<number>(10).fill(0);
-  board.forEach((digit, index) => { if (digit === solution[index]) counts[digit] += 1; });
+  const remaining = remainingDigits(board, solution);
 
   return (
-    <View style={styles.numberPad}>
-      {rows.map((row) => (
-        <View key={row[0]} style={styles.keys}>
-          {row.map((digit) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={String(digit)}
-              accessibilityState={{ disabled }}
-              key={digit}
-              disabled={disabled}
-              onPress={() => onDigit(digit)}
-              style={({ pressed }) => [
-                styles.key, {
-                  backgroundColor: pressed ? theme.primaryTint : theme.surface,
-                  borderColor: theme.border,
-                  opacity: disabled ? 0.5 : 1,
-                },
-              ]}
-            >
-              <Text
-                adjustsFontSizeToFit
-                numberOfLines={1}
-                style={[styles.keyText, { color: counts[digit] === 9 ? theme.muted : theme.primary }]}
-              >{digit}</Text>
-            </Pressable>
-          ))}
-        </View>
+    <View style={styles.keys}>
+      {DIGITS.map((digit) => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={uk.game.digitKey(digit, remaining[digit])}
+          accessibilityState={{ disabled }}
+          key={digit}
+          disabled={disabled}
+          onPress={() => onDigit(digit)}
+          style={({ pressed }) => [
+            styles.key, {
+              backgroundColor: pressed ? theme.primaryTint : theme.surface,
+              borderColor: theme.border,
+              opacity: disabled ? 0.5 : 1,
+            },
+          ]}
+        >
+          <Text
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.3}
+            style={[styles.keyText, styles.keyDigit, { color: remaining[digit] === 0 ? theme.muted : theme.primary }]}
+          >{digit}</Text>
+          <Text
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.3}
+            style={[styles.keyText, styles.keyCount, { color: theme.muted }]}
+          >{remaining[digit]}</Text>
+        </Pressable>
       ))}
     </View>
   );
@@ -158,15 +158,15 @@ const styles = StyleSheet.create({
   headerCaption: { fontSize: 12, fontWeight: '600' },
   timer: { fontSize: 19, fontWeight: '800', fontVariant: ['tabular-nums'] },
   iconButton: { width: 44, height: 44, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  backIcon: { fontSize: 32, lineHeight: 34 },
   pause: { flexDirection: 'row', gap: 4 },
   pauseBar: { width: 3, height: 15, borderRadius: 2 },
   tools: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, borderWidth: 1, borderRadius: 16, padding: 4 },
   tool: { flex: 1, minWidth: 54, minHeight: 56, paddingVertical: 5, alignItems: 'center', justifyContent: 'center', borderRadius: 11 },
   toolIcon: { fontSize: 20, fontWeight: '600' },
   toolLabel: { fontSize: 10, fontWeight: '700', textAlign: 'center' },
-  numberPad: { gap: 5 },
-  keys: { flexDirection: 'row', gap: 4 },
-  key: { flex: 1, minHeight: 52, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  keyText: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  keys: { flexDirection: 'row', gap: 3 },
+  key: { flex: 1, minHeight: 54, borderWidth: 1, borderRadius: 11, justifyContent: 'center', gap: 2 },
+  keyText: { textAlign: 'center', includeFontPadding: false, fontVariant: ['tabular-nums'] },
+  keyDigit: { fontSize: 23, fontWeight: '800' },
+  keyCount: { fontSize: 11, fontWeight: '600' },
 });

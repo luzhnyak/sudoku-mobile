@@ -58,7 +58,7 @@ export async function loadStatistics(db: SqliteConnection, today: string): Promi
       SUM(CASE WHEN status = 'won' THEN elapsed_ms ELSE 0 END) AS wonElapsedMs,
       SUM(mistakes) AS mistakes,
       SUM(hints_used) AS hintsUsed
-    FROM games GROUP BY difficulty
+    FROM games WHERE statistics_included = 1 GROUP BY difficulty
   `);
 
   const byDifficulty = { easy: empty(), medium: empty(), hard: empty(), expert: empty() };
@@ -81,7 +81,7 @@ export async function loadStatistics(db: SqliteConnection, today: string): Promi
 
   const dailyResults = await db.getAllAsync<DailyResult>(`
     SELECT daily_date AS date, status, elapsed_ms AS elapsedMs, mistakes FROM games
-    WHERE daily_date IS NOT NULL AND status IN ('won', 'lost')
+    WHERE statistics_included = 1 AND daily_date IS NOT NULL AND status IN ('won', 'lost')
     ORDER BY daily_date
   `);
   const todayDay = calendarDay(today);

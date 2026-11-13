@@ -48,6 +48,8 @@ const migrations = [
     sound_enabled INTEGER NOT NULL CHECK (sound_enabled IN (0, 1))
   );
   `,
+  `ALTER TABLE games ADD COLUMN statistics_included INTEGER NOT NULL DEFAULT 1
+    CHECK (statistics_included IN (0, 1));`,
 ];
 
 export async function migrate(db: SqliteConnection): Promise<void> {

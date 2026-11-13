@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, Page, PageHeading, SectionTitle, Status } from '../src/components/ui/controls';
+import { Button, Card, Page, PageHeading, SectionTitle, Sheet, Status } from '../src/components/ui/controls';
 import { difficultyLevels } from '../src/components/ui/DifficultyMark';
 import { getRepository } from '../src/database';
 import { goBack, useFocusedResource } from '../src/hooks/navigation';
 import { uk } from '../src/localization/uk';
-import { flushSaves } from '../src/store/sessionStore';
+import { flushSaves, useSessionStore } from '../src/store/sessionStore';
 import { useTheme } from '../src/theme/theme';
 import { formatDate, formatDays, formatTime, localDate } from '../src/utils/format';
 
@@ -17,6 +17,9 @@ export default function StatisticsScreen() {
   const theme = useTheme();
   const [filter, setFilter] = useState<Filter>('all');
   const [visibleDays, setVisibleDays] = useState(7);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState(false);
   const load = useCallback(async () => {
     await flushSaves();
     return (await getRepository()).getStatistics(localDate());
@@ -26,9 +29,34 @@ export default function StatisticsScreen() {
   const stats = data ? (filter === 'all' ? data.total : data.byDifficulty[filter]) : null;
   const rate = stats?.started ? Math.round(stats.completed * 100 / stats.started) : 0;
 
+  function closeReset() {
+    if (resetting) return;
+    setResetOpen(false);
+    setResetError(false);
+  }
+
+  async function resetStatistics() {
+    if (resetting) return;
+    setResetting(true);
+    setResetError(false);
+    try {
+      await flushSaves();
+      if (useSessionStore.getState().saveFailed) throw new Error('Pending saves failed');
+      await (await getRepository()).resetStatistics();
+      setResetOpen(false);
+      setFilter('all');
+      setVisibleDays(7);
+      retry();
+    } catch {
+      setResetError(true);
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
-    <Page>
-      <PageHeading title={uk.home.stats} onBack={goBack} />
+    <Page fullWidth>
+      <PageHeading title={uk.home.stats} onBack={goBack} inline />
       {error && <Status message={uk.common.error} action={<Button label={uk.common.retry} onPress={retry} />} />}
       {!error && !data && <Status loading message={uk.common.loading} />}
       {data && stats && (
@@ -94,7 +122,17 @@ export default function StatisticsScreen() {
               </Card>
             </>
           )}
+          <Button label={uk.statistics.reset} variant="secondary" onPress={() => setResetOpen(true)} />
         </>
+      )}
+      {resetOpen && (
+        <Sheet title={uk.statistics.resetQuestion} onClose={closeReset}>
+          <Text style={[styles.description, { color: theme.muted }]}>{uk.statistics.resetDescription}</Text>
+          {resetError && <Status message={uk.statistics.resetError} />}
+          {resetting && <Status loading message={uk.statistics.resetting} />}
+          <Button label={uk.statistics.resetConfirm} disabled={resetting} onPress={() => void resetStatistics()} />
+          <Button label={uk.common.cancel} variant="secondary" disabled={resetting} onPress={closeReset} />
+        </Sheet>
       )}
     </Page>
   );
@@ -121,6 +159,7 @@ function MetricRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  description: { fontSize: 15, lineHeight: 22 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   filter: { borderWidth: 1, minHeight: 42, paddingVertical: 8, paddingHorizontal: 10, justifyContent: 'center', borderRadius: 12 },
   filterLabel: { fontSize: 13, fontWeight: '700' },

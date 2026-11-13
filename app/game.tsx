@@ -5,16 +5,19 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { GameHeader, GameToolbar, NumberPad } from '../src/components/game/GameControls';
 import { GameResult } from '../src/components/game/GameResult';
+import { NewGameSheet } from '../src/components/game/NewGameSheet';
 import { SudokuBoard } from '../src/components/game/SudokuBoard';
 import { Button, Card, Page, PageHeading, Sheet, Status } from '../src/components/ui/controls';
 import type { Digit } from '../src/engine';
 import { goBack } from '../src/hooks/navigation';
 import { uk } from '../src/localization/uk';
 import { useSessionStore } from '../src/store/sessionStore';
-import { useTheme } from '../src/theme/theme';
+import { layout, useTheme } from '../src/theme/theme';
 import { formatTime } from '../src/utils/format';
 
 const NO_HINT_CELLS: readonly number[] = [];
+const GAME_GAP = 18;
+const MIN_BOARD_SIZE = 252;
 
 function returnHome() {
   router.dismissTo('/');
@@ -31,8 +34,11 @@ export default function GameScreen() {
   const paused = useSessionStore((state) => state.paused);
   const busy = useSessionStore((state) => state.busy);
   const setFocused = useSessionStore((state) => state.setFocused);
-  const [sheet, setSheet] = useState<'hint' | 'restart' | null>(null);
+  const [sheet, setSheet] = useState<'hint' | 'restart' | 'newGame' | null>(null);
   const [retryFailed, setRetryFailed] = useState(false);
+  const [viewport, setViewport] = useState<{ width: number; height: number }>();
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [controlsHeight, setControlsHeight] = useState(0);
   const closeSheet = () => setSheet(null);
 
   useFocusEffect(useCallback(() => {
@@ -72,9 +78,12 @@ export default function GameScreen() {
         <Button
           label={uk.home.newGame}
           variant={canRetry ? 'secondary' : 'primary'}
-          onPress={() => router.dismissTo('/?newGame=1')}
+          onPress={() => setSheet('newGame')}
         />
         <Button label={uk.common.home} variant="quiet" onPress={returnHome} />
+        {sheet === 'newGame' && (
+          <NewGameSheet onClose={closeSheet} onStarted={() => setRetryFailed(false)} />
+        )}
       </Page>
     );
   }
@@ -113,18 +122,26 @@ export default function GameScreen() {
     { label: uk.game.hint, short: uk.game.hint, glyph: '✦', action: () => setSheet('hint') },
   ];
 
+  const boardSize = viewport && Math.min(
+    Math.max(0, viewport.width - 2 * layout.inset),
+    Math.max(MIN_BOARD_SIZE, viewport.height - headerHeight - controlsHeight - 2 * (GAME_GAP + layout.inset)),
+  );
+
   return (
-    <Page>
-      <GameHeader
-        difficulty={game.difficulty}
-        daily={game.type === 'daily'}
-        mistakes={game.mistakes}
-        showMistakes={settings.mistakeCheck || game.mistakes > 0}
-        limit={settings.mistakeCheck ? settings.mistakeLimit : null}
-        onBack={goBack}
-        onPause={() => session.setPaused(true)}
-      />
+    <Page contentStyle={styles.gamePage} onLayout={({ nativeEvent }) => setViewport(nativeEvent.layout)}>
+      <View onLayout={({ nativeEvent }) => setHeaderHeight(nativeEvent.layout.height)}>
+        <GameHeader
+          difficulty={game.difficulty}
+          daily={game.type === 'daily'}
+          mistakes={game.mistakes}
+          showMistakes={settings.mistakeCheck || game.mistakes > 0}
+          limit={settings.mistakeCheck ? settings.mistakeLimit : null}
+          onBack={goBack}
+          onPause={() => session.setPaused(true)}
+        />
+      </View>
       <SudokuBoard
+        size={boardSize}
         board={game.board}
         puzzle={game.puzzle}
         solution={game.solution}
@@ -134,19 +151,21 @@ export default function GameScreen() {
         hintCells={hint?.cells ?? NO_HINT_CELLS}
         onSelect={onSelect}
       />
-      {(hint || feedback) && (
-        <View accessibilityLiveRegion="polite" style={[styles.hint, { backgroundColor: theme.hintTint }]}>
-          {hint && <Text style={[styles.hintTitle, { color: theme.hint }]}>{hint.technique}</Text>}
-          <Text style={[styles.message, { color: theme.hint }]}>
-            {hint?.explanation ?? (feedback ? uk.game[feedback] : '')}
-          </Text>
-          {hint && !hint.placement && (
-            <Button label={uk.game.nextHint} variant="quiet" onPress={session.explainMove} />
-          )}
-        </View>
-      )}
-      <GameToolbar tools={tools} />
-      <NumberPad board={game.board} solution={game.solution} onDigit={onDigit} disabled={!canEdit} />
+      <View style={styles.gameControls} onLayout={({ nativeEvent }) => setControlsHeight(nativeEvent.layout.height)}>
+        <GameToolbar tools={tools} />
+        <NumberPad board={game.board} solution={game.solution} onDigit={onDigit} disabled={!canEdit} />
+        {(hint || feedback) && (
+          <View accessibilityLiveRegion="polite" style={[styles.hint, { backgroundColor: theme.hintTint }]}>
+            {hint && <Text style={[styles.hintTitle, { color: theme.hint }]}>{hint.technique}</Text>}
+            <Text style={[styles.message, { color: theme.hint }]}>
+              {hint?.explanation ?? (feedback ? uk.game[feedback] : '')}
+            </Text>
+            {hint && !hint.placement && (
+              <Button label={uk.game.nextHint} variant="quiet" onPress={session.explainMove} />
+            )}
+          </View>
+        )}
+      </View>
       {sheet === 'hint' && (
         <Sheet title={uk.game.hint} onClose={closeSheet}>
           <Button label={uk.game.explain} onPress={() => { closeSheet(); session.explainMove(); }} />
@@ -171,6 +190,8 @@ function playAction(action: () => void) {
 }
 
 const styles = StyleSheet.create({
+  gamePage: { gap: GAME_GAP, paddingBottom: layout.inset },
+  gameControls: { gap: GAME_GAP },
   pauseCaption: { fontSize: 15, fontWeight: '600' },
   pauseTime: { fontSize: 34, fontWeight: '800', fontVariant: ['tabular-nums'] },
   message: { fontSize: 15, lineHeight: 22 },

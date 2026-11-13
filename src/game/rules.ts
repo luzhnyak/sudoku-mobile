@@ -1,6 +1,25 @@
-import { digitBit, nextHint, PEERS } from '../engine';
+import { digitBit, findConflicts, nextHint, PEERS, SIZE } from '../engine';
 import type { Board, Digit, LogicalHint, Puzzle } from '../engine';
 import type { CellChange, Game, Move, Settings } from './model';
+
+export function remainingDigits(board: Board, solution: Board): readonly number[] {
+  const remaining = new Array<number>(SIZE + 1).fill(0);
+  solution.forEach((digit, index) => {
+    if (board[index] !== digit) remaining[digit] += 1;
+  });
+  return remaining;
+}
+
+export function cellWarnings(board: Board, solution: Board, settings: Settings) {
+  const conflicts = findConflicts(board);
+  return board.map((value, index) => {
+    const incorrect = settings.mistakeCheck && value !== 0 && value !== solution[index];
+    return {
+      incorrect,
+      conflicted: settings.highlightConflicts && conflicts.has(index) && (!settings.mistakeCheck || incorrect),
+    };
+  });
+}
 
 function initialProgress(puzzle: Board) {
   return {

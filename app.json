@@ -17,7 +17,19 @@
       "predictiveBackGestureEnabled": true
     },
     "ios": { "bundleIdentifier": "com.luzhnyak.sudoku" },
-    "plugins": ["expo-router", "expo-sqlite"],
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#13378F",
+          "image": "./assets/icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
+        }
+      ]
+    ],
     "updates": { "enabled": false }
   }
 }

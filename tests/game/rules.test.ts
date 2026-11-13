@@ -1,9 +1,11 @@
 import { defaultSettings } from '../../src/game/model';
 import {
   createGame,
+  cellWarnings,
   enterDigit,
   erase,
   explain,
+  remainingDigits,
   recordExplanation,
   redo,
   restart,
@@ -33,6 +35,77 @@ const nearSolved: Puzzle = {
 function start(source: Puzzle = puzzle) {
   return createGame(source, { id: 'game-1', now: 100 });
 }
+
+test.each([
+  { group: 'row', wrong: 4, correct: 2 },
+  { group: 'column', wrong: 29, correct: 2 },
+  { group: 'box', wrong: 10, correct: 2 },
+])('keeps a correct digit clear when a wrong duplicate exists in its $group', ({ wrong, correct }) => {
+  const source = {
+    ...puzzle,
+    puzzle: solution.map((value, index) => index === wrong || index === correct ? 0 : value),
+  };
+  const mistaken = enterDigit(start(source), wrong, 4, false, defaultSettings, 200);
+  const placed = enterDigit(mistaken, correct, 4, false, defaultSettings, 300);
+  const warnings = cellWarnings(Object.freeze([...placed.board]), solution, defaultSettings);
+
+  expect(findConflicts(placed.board).has(correct)).toBe(true);
+  expect(warnings[wrong]).toEqual({ incorrect: true, conflicted: true });
+  expect(warnings[correct]).toEqual({ incorrect: false, conflicted: false });
+  expect(placed.mistakes).toBe(1);
+  expect(warnings.filter((warning) => warning.incorrect || warning.conflicted)).toHaveLength(1);
+
+  const undone = undo(placed, 400);
+  expect(cellWarnings(undone.board, solution, defaultSettings)[correct]).toEqual({ incorrect: false, conflicted: false });
+  expect(cellWarnings(redo(undone, 500).board, solution, defaultSettings)).toEqual(warnings);
+  const erased = erase(placed, wrong, 600);
+  expect(cellWarnings(erased.board, solution, defaultSettings).every((warning) => !warning.incorrect && !warning.conflicted)).toBe(true);
+});
+
+test.each([
+  { mistakeCheck: true, highlightConflicts: true, wrongConflict: true, correctConflict: false },
+  { mistakeCheck: true, highlightConflicts: false, wrongConflict: false, correctConflict: false },
+  { mistakeCheck: false, highlightConflicts: true, wrongConflict: true, correctConflict: true },
+  { mistakeCheck: false, highlightConflicts: false, wrongConflict: false, correctConflict: false },
+])('respects warning settings with mistakeCheck=$mistakeCheck and highlightConflicts=$highlightConflicts', ({
+  mistakeCheck, highlightConflicts, wrongConflict, correctConflict,
+}) => {
+  const mistaken = enterDigit(start(nearSolved), 3, 4, false, defaultSettings, 200);
+  const placed = enterDigit(mistaken, 2, 4, false, defaultSettings, 300);
+  const settings = { ...defaultSettings, mistakeCheck, highlightConflicts };
+  const warnings = cellWarnings(placed.board, solution, settings);
+  expect(warnings[3]).toEqual({ incorrect: mistakeCheck, conflicted: wrongConflict });
+  expect(warnings[2]).toEqual({ incorrect: false, conflicted: correctConflict });
+});
+
+test('warns about an incorrect digit without a duplicate and leaves empty cells and notes clear', () => {
+  const mistaken = enterDigit(start(), 2, 1, false, defaultSettings, 200);
+  const noted = enterDigit(mistaken, 3, 1, true, defaultSettings, 300);
+  expect(findConflicts(noted.board).size).toBe(0);
+  const warnings = cellWarnings(noted.board, solution, defaultSettings);
+  expect(warnings[2]).toEqual({ incorrect: true, conflicted: false });
+  expect(warnings[3]).toEqual({ incorrect: false, conflicted: false });
+  expect(warnings[5]).toEqual({ incorrect: false, conflicted: false });
+});
+
+test('counts positions still missing each digit through notes, mistakes and move history', () => {
+  const game = start(nearSolved);
+  const count = ({ board, solution }: typeof game) => remainingDigits(board, solution);
+  const missing = [0, 0, 0, 0, 1, 0, 1, 0, 0, 0];
+  expect(count(game)).toEqual(missing);
+
+  const noted = enterDigit(game, 2, 4, true, defaultSettings, 200);
+  const mistaken = enterDigit(noted, 2, 6, false, defaultSettings, 300);
+  expect(count(noted)).toEqual(missing);
+  expect(count(mistaken)).toEqual(missing);
+
+  const corrected = enterDigit(mistaken, 2, 4, false, defaultSettings, 400);
+  const undone = undo(corrected, 500);
+  expect(count(corrected)[4]).toBe(0);
+  expect(count(undone)).toEqual(missing);
+  expect(count(redo(undone, 600))[4]).toBe(0);
+  expect(count(erase(corrected, 2, 700))).toEqual(missing);
+});
 
 test('starts a daily game from its givens with a clean attempt', () => {
   const game = createGame(puzzle, { id: 'day-1', now: 100, dailyDate: '2026-11-11' });

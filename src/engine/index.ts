@@ -1,4 +1,4 @@
-export { boxOf, columnOf, DIGITS, digitBit, findConflicts, PEERS, rowOf } from './board';
+export { boxOf, columnOf, DIGITS, digitBit, findConflicts, PEERS, rowOf, SIZE } from './board';
 export type { Board, Difficulty, Digit, Puzzle } from './board';
 export { dailyDifficulty, dailySeed, GENERATOR_VERSION } from './daily';
 export { generatePuzzle } from './generator';

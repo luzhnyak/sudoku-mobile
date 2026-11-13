@@ -24,8 +24,8 @@ export default function SettingsScreen() {
   const change = useSessionStore((state) => state.changeSettings);
 
   return (
-    <Page>
-      <PageHeading title={uk.home.settings} onBack={goBack} />
+    <Page fullWidth>
+      <PageHeading title={uk.home.settings} onBack={goBack} inline />
       <SectionTitle>{uk.settings.appearance}</SectionTitle>
       <Card>
         <View style={styles.choices}>
